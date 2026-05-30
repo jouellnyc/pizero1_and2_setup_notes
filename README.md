@@ -112,7 +112,7 @@ The Pi Zero uses LED blinks to report boot failures:
 | 7 | Kernel image not found |
 | Constant | Booted successfully |
 
-**7 blinks on Pi Zero 1 with 64-bit image** — the 64-bit kernel (`kernel8.img`) will not run on ARMv6. Always use 32-bit image on Pi Zero 1.
+**7 blinks on Pi Zero 1 with 64-bit image** — the 64-bit kernel (`kernel8.img`) will not run on ARMv6. Always use 32-bit image on Pi Zero 1. I fat fingered and tried to boot a Pizero 1 with a pizero 2 image...Oops
 
 ### Password Setup — Bullseye
 
