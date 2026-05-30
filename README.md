@@ -216,7 +216,7 @@ sudo minicom -D /dev/ttyUSB0 -b 115200
 
 ---
 
-## Key Lessons (What worked for me for a scrappy project / Anecdotal / Not saying it's the Law)
+## Key Lessons (What worked for me quickly / Not saying it's the Law)
 
 - **Always verify card contents after flashing** — Pi Imager can silently skip customisation
 - **Pi Zero 1 and 2W are not compatible** — different CPU architecture, different kernels, different OS requirements
