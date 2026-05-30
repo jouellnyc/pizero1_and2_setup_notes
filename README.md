@@ -3,7 +3,7 @@
 
 A real-world account of getting two different Pi Zero generations booted, configured, and on the network. 
 
-I feel like I do this every few months or so and never fully, properly document for future me...
+I feel like I do this every 6 months or so ('Hey!, I'll just boot that pizero real quick!")... and never fully, properly document for future me...
 
 ## Hardware
 
