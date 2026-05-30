@@ -1,35 +1,90 @@
 #!/bin/bash
 
-# Pi Zero 1 SD card interrogation and fix script
-# Checks every relevant file and fixes what is broken
-# Usage: sudo bash pizero1_interrogate.sh [bootfs_path] [rootfs_path]
+# Pi Zero SD card interrogation and fix script
+# Supports Pi Zero 1 (Bullseye 32-bit) and Pi Zero 2W (Trixie 64-bit)
 #
-# Example:
-#   sudo bash pizero1_interrogate.sh /media/john/bootfs /media/john/rootfs
+# Usage:
+#   sudo bash pizero_interrogate.sh --zero1  [bootfs_path] [rootfs_path]
+#   sudo bash pizero_interrogate.sh --zero2w [bootfs_path] [rootfs_path]
+#
+# Examples:
+#   sudo bash pizero_interrogate.sh --zero1
+#   sudo bash pizero_interrogate.sh --zero2w /media/user/bootfs /media/user/rootfs
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-SSID=""
-WIFI_PASSWORD=""
+# ─── Bail out if run with sh ──────────────────────────────────────────────────
+if [ -z "$BASH_VERSION" ]; then
+    echo "ERROR: Run this script with bash, not sh"
+    echo "  sudo bash $0 --zero1|--zero2w"
+    exit 1
+fi
+
+# ─── Usage ────────────────────────────────────────────────────────────────────
+usage() {
+    echo ""
+    echo "Usage: sudo bash $0 --zero1|--zero2w [bootfs_path] [rootfs_path]"
+    echo ""
+    echo "  --zero1   Pi Zero 1 (Bullseye 32-bit, pi user, wpa_supplicant)"
+    echo "  --zero2w  Pi Zero 2W (Trixie 64-bit, ubuntu user, cloud-init)"
+    echo ""
+    echo "Defaults:"
+    echo "  bootfs_path : /media/user/bootfs"
+    echo "  rootfs_path : /media/user/rootfs"
+    echo ""
+    exit 1
+}
+
+# ─── Parse args ───────────────────────────────────────────────────────────────
+BOARD=""
+case "$1" in
+    --zero1)  BOARD="zero1";  shift ;;
+    --zero2w) BOARD="zero2w"; shift ;;
+    *) usage ;;
+esac
+
+BOOTFS="${1:-/media/user/bootfs}"
+ROOTFS="${2:-/media/user/rootfs}"
+
+# ─── Config — edit these ──────────────────────────────────────────────────────
+SSID="YourSSID"
+WIFI_PASSWORD="YourPassword"
 COUNTRY="US"
+
+# Pi Zero 1
+PI_USER="pi"
 PI_PASSWORD="ubuntu"
-HOSTNAME="pizero1"
+PI_HOSTNAME="pizero1"
+
+# Pi Zero 2W
+ZW_USER="ubuntu"
+ZW_PASSWORD="ubuntu"
+ZW_HOSTNAME="pizero2w"
 # ─────────────────────────────────────────────────────────────────────────────
 
-BOOTFS="${1:-/media/john/bootfs}"
-ROOTFS="${2:-/media/john/rootfs}"
-
 PASS=0
-FAIL=0
+FIXED=0
+ERRORS=0
 
 ok()   { echo "  [OK]  $1"; ((PASS++)); }
-bad()  { echo "  [!!]  $1"; ((FAIL++)); }
-fix()  { echo "  [FIX] $1"; }
+bad()  { echo "  [!!]  $1"; ((ERRORS++)); }
+fix()  { echo "  [FIX] $1"; ((FIXED++)); }
 info() { echo "  [..] $1"; }
 hr()   { echo "────────────────────────────────────────────────────"; }
 
+if [ "$BOARD" = "zero1" ]; then
+    BOARD_LABEL="Pi Zero 1 (Bullseye 32-bit)"
+    USERNAME="$PI_USER"
+    PASSWORD="$PI_PASSWORD"
+    HOSTNAME="$PI_HOSTNAME"
+else
+    BOARD_LABEL="Pi Zero 2W (Trixie 64-bit)"
+    USERNAME="$ZW_USER"
+    PASSWORD="$ZW_PASSWORD"
+    HOSTNAME="$ZW_HOSTNAME"
+fi
+
 echo ""
 hr
-echo " Pi Zero 1 SD Card Interrogation"
+echo " $BOARD_LABEL SD Card Interrogation"
 hr
 echo ""
 
@@ -42,7 +97,6 @@ else
     echo "      Is the card mounted? Try: lsblk"
     exit 1
 fi
-
 if [ -d "$ROOTFS" ]; then
     ok "Root partition found at $ROOTFS"
 else
@@ -52,31 +106,77 @@ else
 fi
 echo ""
 
-# ─── Check SSH file ───────────────────────────────────────────────────────────
+# ─── Check SSH ────────────────────────────────────────────────────────────────
 echo "[ SSH ]"
-if [ -f "$BOOTFS/ssh" ]; then
-    ok "ssh file exists"
+if [ "$BOARD" = "zero1" ]; then
+    if [ -f "$BOOTFS/ssh" ]; then
+        ok "ssh file exists"
+    else
+        bad "ssh file MISSING"
+        fix "Creating ssh file..."
+        touch "$BOOTFS/ssh"
+        ok "ssh file created"
+    fi
 else
-    bad "ssh file MISSING"
-    fix "Creating ssh file..."
-    touch "$BOOTFS/ssh"
-    ok "ssh file created"
+    # 2W uses cloud-init user-data for SSH
+    if [ -f "$BOOTFS/user-data" ]; then
+        ok "user-data exists"
+        if grep -q "ssh_pwauth: true" "$BOOTFS/user-data"; then
+            ok "ssh_pwauth is enabled"
+        else
+            bad "ssh_pwauth not set to true in user-data"
+            fix "Adding ssh_pwauth to user-data..."
+            sed -i '/^#cloud-config/a ssh_pwauth: true' "$BOOTFS/user-data"
+            ok "ssh_pwauth added"
+        fi
+        if grep -qE "^#" "$BOOTFS/user-data" | grep -q "chpasswd"; then
+            bad "user-data appears to be all comments — customisation may not have written"
+            info "Check user-data manually:"
+            cat "$BOOTFS/user-data" | sed 's/^/        /'
+        fi
+    else
+        bad "user-data MISSING"
+    fi
 fi
 echo ""
 
-# ─── Check wpa_supplicant.conf ────────────────────────────────────────────────
-echo "[ WiFi — wpa_supplicant.conf ]"
-WPA="$BOOTFS/wpa_supplicant.conf"
-if [ -f "$WPA" ]; then
-    ok "wpa_supplicant.conf exists"
-    # Check contents
-    if grep -q "$SSID" "$WPA"; then
-        ok "SSID '$SSID' found in config"
+# ─── Check WiFi ───────────────────────────────────────────────────────────────
+echo "[ WiFi ]"
+if [ "$BOARD" = "zero1" ]; then
+    WPA="$BOOTFS/wpa_supplicant.conf"
+    if [ -f "$WPA" ]; then
+        ok "wpa_supplicant.conf exists"
+        if grep -q "$SSID" "$WPA"; then
+            ok "SSID '$SSID' found in config"
+        else
+            bad "SSID '$SSID' NOT found in config"
+            info "Current contents:"
+            cat "$WPA" | sed 's/^/        /'
+            fix "Rewriting wpa_supplicant.conf..."
+            cat > "$WPA" << EOF
+country=$COUNTRY
+ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
+update_config=1
+
+network={
+    ssid="$SSID"
+    psk="$WIFI_PASSWORD"
+    key_mgmt=WPA-PSK
+}
+EOF
+            ok "wpa_supplicant.conf rewritten"
+        fi
+        if grep -q "country=$COUNTRY" "$WPA"; then
+            ok "Country code '$COUNTRY' set"
+        else
+            bad "Country code missing"
+            fix "Adding country code..."
+            sed -i "1s/^/country=$COUNTRY\n/" "$WPA"
+            ok "Country code added"
+        fi
     else
-        bad "SSID '$SSID' NOT found in config"
-        info "Current contents:"
-        cat "$WPA" | sed 's/^/        /'
-        fix "Rewriting wpa_supplicant.conf..."
+        bad "wpa_supplicant.conf MISSING"
+        fix "Creating wpa_supplicant.conf..."
         cat > "$WPA" << EOF
 country=$COUNTRY
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
@@ -88,35 +188,48 @@ network={
     key_mgmt=WPA-PSK
 }
 EOF
-        ok "wpa_supplicant.conf rewritten"
+        ok "wpa_supplicant.conf created"
     fi
-    if grep -q "country=$COUNTRY" "$WPA"; then
-        ok "Country code '$COUNTRY' set"
-    else
-        bad "Country code missing"
-        fix "Adding country code..."
-        sed -i "1s/^/country=$COUNTRY\n/" "$WPA"
-        ok "Country code added"
-    fi
+    echo ""
+    info "Final wpa_supplicant.conf:"
+    cat "$WPA" | sed 's/^/        /'
 else
-    bad "wpa_supplicant.conf MISSING"
-    fix "Creating wpa_supplicant.conf..."
-    cat > "$WPA" << EOF
-country=$COUNTRY
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-
-network={
-    ssid="$SSID"
-    psk="$WIFI_PASSWORD"
-    key_mgmt=WPA-PSK
-}
+    NC="$BOOTFS/network-config"
+    if [ -f "$NC" ]; then
+        ok "network-config exists"
+        if grep -q "$SSID" "$NC"; then
+            ok "SSID '$SSID' found in network-config"
+        else
+            bad "SSID '$SSID' NOT found — network-config may be all comments"
+            info "Current contents:"
+            cat "$NC" | sed 's/^/        /'
+            fix "Rewriting network-config..."
+            cat > "$NC" << EOF
+network:
+  version: 2
+  wifis:
+    wlan0:
+      dhcp4: true
+      optional: true
+      access-points:
+        "$SSID":
+          password: "$WIFI_PASSWORD"
+      regulatory-domain: $COUNTRY
 EOF
-    ok "wpa_supplicant.conf created"
+            ok "network-config rewritten"
+        fi
+        if grep -q "regulatory-domain" "$NC"; then
+            ok "regulatory-domain set"
+        else
+            bad "regulatory-domain missing from network-config"
+        fi
+    else
+        bad "network-config MISSING"
+    fi
+    echo ""
+    info "Final network-config:"
+    cat "$NC" | sed 's/^/        /'
 fi
-echo ""
-info "Final wpa_supplicant.conf:"
-cat "$WPA" | sed 's/^/        /'
 echo ""
 
 # ─── Check hostname ───────────────────────────────────────────────────────────
@@ -141,39 +254,31 @@ else
 fi
 echo ""
 
-# ─── Check /etc/shadow ────────────────────────────────────────────────────────
+# ─── Check password ───────────────────────────────────────────────────────────
 echo "[ Password — /etc/shadow ]"
 SHADOW="$ROOTFS/etc/shadow"
 if [ -f "$SHADOW" ]; then
     ok "shadow file exists"
-    PI_LINE=$(grep "^pi:" "$SHADOW")
-    if [ -n "$PI_LINE" ]; then
-        ok "pi user found in shadow"
-        info "Current pi shadow entry:"
-        echo "        $PI_LINE"
-        # Check if password is locked (* or !)
-        PI_HASH=$(echo "$PI_LINE" | cut -d: -f2)
-        if [ "$PI_HASH" = "*" ] || [ "$PI_HASH" = "!" ] || [ "$PI_HASH" = "!!" ]; then
-            bad "pi password is LOCKED ('$PI_HASH') — login will fail"
-            fix "Setting pi password to '$PI_PASSWORD'..."
-            HASH=$(echo "$PI_PASSWORD" | openssl passwd -6 -stdin)
-            sed -i "s|^pi:[^:]*:|pi:$HASH:|" "$SHADOW"
+    USER_LINE=$(grep "^${USERNAME}:" "$SHADOW")
+    if [ -n "$USER_LINE" ]; then
+        ok "$USERNAME user found in shadow"
+        info "Current shadow entry:"
+        echo "        $USER_LINE"
+        USER_HASH=$(echo "$USER_LINE" | cut -d: -f2)
+        if [ "$USER_HASH" = "*" ] || [ "$USER_HASH" = "!" ] || [ "$USER_HASH" = "!!" ]; then
+            bad "$USERNAME password is LOCKED ('$USER_HASH') — login will fail"
+            fix "Setting $USERNAME password to '$PASSWORD'..."
+            HASH=$(echo "$PASSWORD" | openssl passwd -6 -stdin)
+            sed -i "s|^${USERNAME}:[^:]*:|${USERNAME}:$HASH:|" "$SHADOW"
             ok "Password set"
-            info "New pi shadow entry:"
-            grep "^pi:" "$SHADOW" | sed 's/^/        /'
+            info "New shadow entry:"
+            grep "^${USERNAME}:" "$SHADOW" | sed 's/^/        /'
         else
-            ok "pi password hash looks set (not locked)"
-            info "Hash prefix: $(echo $PI_HASH | cut -c1-10)..."
-            # Offer to reset anyway
-            fix "Resetting pi password to '$PI_PASSWORD' to be sure..."
-            HASH=$(echo "$PI_PASSWORD" | openssl passwd -6 -stdin)
-            sed -i "s|^pi:[^:]*:|pi:$HASH:|" "$SHADOW"
-            ok "Password reset"
-            info "New pi shadow entry:"
-            grep "^pi:" "$SHADOW" | sed 's/^/        /'
+            ok "$USERNAME password hash is set and not locked — leaving as-is"
+            info "Hash prefix: $(echo $USER_HASH | cut -c1-10)..."
         fi
     else
-        bad "pi user NOT found in shadow!"
+        bad "$USERNAME user NOT found in shadow!"
         info "Users in shadow:"
         cut -d: -f1 "$SHADOW" | sed 's/^/        /'
     fi
@@ -184,10 +289,9 @@ echo ""
 
 # ─── Check cmdline.txt ────────────────────────────────────────────────────────
 echo "[ cmdline.txt ]"
-CMDLINE="$BOOTFS/cmdline.txt"
-if [ -f "$CMDLINE" ]; then
+if [ -f "$BOOTFS/cmdline.txt" ]; then
     ok "cmdline.txt exists"
-    info "Contents: $(cat $CMDLINE)"
+    info "Contents: $(cat $BOOTFS/cmdline.txt)"
 else
     bad "cmdline.txt MISSING — card may not boot"
 fi
@@ -195,8 +299,7 @@ echo ""
 
 # ─── Check config.txt ─────────────────────────────────────────────────────────
 echo "[ config.txt ]"
-CONFIG="$BOOTFS/config.txt"
-if [ -f "$CONFIG" ]; then
+if [ -f "$BOOTFS/config.txt" ]; then
     ok "config.txt exists"
 else
     bad "config.txt MISSING — card may not boot"
@@ -205,13 +308,24 @@ echo ""
 
 # ─── Check kernel ─────────────────────────────────────────────────────────────
 echo "[ Kernel ]"
-if [ -f "$BOOTFS/kernel.img" ]; then
-    ok "kernel.img found (32-bit ARMv6 — correct for Pi Zero 1)"
+if [ "$BOARD" = "zero1" ]; then
+    if [ -f "$BOOTFS/kernel.img" ]; then
+        ok "kernel.img found (32-bit ARMv6 — correct for Pi Zero 1)"
+    else
+        bad "kernel.img NOT found — wrong image for Pi Zero 1?"
+    fi
+    if [ -f "$BOOTFS/kernel8.img" ]; then
+        info "kernel8.img also present (64-bit — not used on Pi Zero 1)"
+    fi
 else
-    bad "kernel.img NOT found — wrong image for Pi Zero 1?"
-fi
-if [ -f "$BOOTFS/kernel8.img" ]; then
-    info "kernel8.img also present (64-bit — not used on Pi Zero 1)"
+    if [ -f "$BOOTFS/kernel8.img" ]; then
+        ok "kernel8.img found (64-bit — correct for Pi Zero 2W)"
+    else
+        bad "kernel8.img NOT found — wrong image for Pi Zero 2W?"
+    fi
+    if [ -f "$BOOTFS/kernel.img" ]; then
+        info "kernel.img also present (32-bit — not used on Pi Zero 2W)"
+    fi
 fi
 echo ""
 
@@ -220,7 +334,8 @@ hr
 echo " Summary"
 hr
 echo "  Passed : $PASS"
-echo "  Fixed  : $FAIL"
+echo "  Fixed  : $FIXED"
+echo "  Errors : $ERRORS"
 echo ""
 
 echo "==> Syncing writes to disk..."
@@ -230,9 +345,9 @@ echo "Now unmount both partitions:"
 echo "  sudo umount $BOOTFS"
 echo "  sudo umount $ROOTFS"
 echo ""
-echo "Insert card into Pi Zero 1 and power on."
-echo "SSH with: ssh pi@$HOSTNAME.local"
-echo "Password: $PI_PASSWORD"
+echo "Insert card into $BOARD_LABEL and power on."
+echo "SSH with: ssh ${USERNAME}@<ip>"
+echo "          ssh ${USERNAME}@$HOSTNAME.local  (mDNS, may not work with Pi-hole DHCP)"
+echo "Password: $PASSWORD"
 echo ""
-
 
