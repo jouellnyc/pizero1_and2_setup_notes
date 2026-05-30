@@ -31,7 +31,7 @@ I feel like I do this every 6 months or so ('Hey!, I'll just boot that pizero re
 
 **HDMI must be connected before power** — Pi Zero doesn't hotplug HDMI. Plug display in first, then power.
 
-**Power supply matters** — USB hub ports (500mA) are not enough. Pi Zero 2W needs 5V/1A minimum, 5V/2.5A recommended. A good phone charger works perfectly.
+**Power supply matters** — USB hub ports (500mA) are not enough. Pi Zero 2W needs 5V/1A minimum, 5V/2.5A recommended. 
 
 **nmtui couldn't see WiFi connections** — Pi OS uses netplan-generated config files in `/etc/netplan/90-NM-*.yaml` rather than `/etc/NetworkManager/system-connections/`. nmtui reads NM's on-disk store which is empty. The configs are there, just not where nmtui looks.
 
