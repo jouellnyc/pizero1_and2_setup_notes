@@ -1,7 +1,9 @@
 
 # Raspberry Pi Zero 1 & 2W — Setup Adventure
 
-A real-world account of getting two different Pi Zero generations booted, configured, and on the network. Spoiler: it was not straightforward.
+A real-world account of getting two different Pi Zero generations booted, configured, and on the network. 
+
+I feel like I do this every few months or so and never fully, properly document for future me...
 
 ## Hardware
 
