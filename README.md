@@ -211,7 +211,7 @@ dmesg | tail -10
 screen /dev/ttyUSB0 115200
 # or
 sudo minicom -D /dev/ttyUSB0 -b 115200
-# In minicom: Ctrl+A Z → O → Serial port setup → Hardware FC: No, Software FC: No
+# In minicom: Ctrl+A Z  O  Serial port setup → Hardware FC: No, Software FC: No
 ```
 
 ---
@@ -221,7 +221,7 @@ sudo minicom -D /dev/ttyUSB0 -b 115200
 - **Always verify card contents after flashing** — Pi Imager can silently skip customisation
 - **Pi Zero 1 and 2W are not compatible** — different CPU architecture, different kernels, different OS requirements
 - **Trixie + Pi Zero 1 = trouble** — use Bullseye Legacy for Zero 1
-- **Rainbow screen ≠ failure** on 2W — check the network before panicking
+- **Rainbow screen is not always failure** on 2W — check the network before panicking
 - **Card cloning** — never pipe through gzip when doing card-to-card clone; use plain `dd`
 - **Power** — use a real 5V/2.5A wall adapter, not a hub port
 - **`/etc/shadow` direct edit** is more reliable than `userconf.txt` for setting passwords on Bullseye
