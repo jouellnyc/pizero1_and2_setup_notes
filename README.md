@@ -84,7 +84,7 @@ sudo umount /media/user/rootfs
 
 ## Pi Zero 2W — Dual WiFi Failover
 
-See [README.md](README.md) for the full dual WiFi setup with RTL8188FU USB adapter and automatic metric-based failover.
+See [README.md](https://github.com/jouellnyc/pizero2w_dual_wifi) for the full dual WiFi setup with RTL8188FU USB adapter and automatic metric-based failover.
 
 ---
 
